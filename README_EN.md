@@ -1,6 +1,4 @@
-# AFCheat
-
-[中文](README_CN.md) | [EN](README_EN.md)
+# AFCheat (Amazing Frog Trainer)
 
 ## Overview
 AFCheat is a Windows trainer for the single-player game Amazing Frog. It provides a GUI to modify game memory, enabling features such as unlocking all costumes and enabling infinite ammo.
