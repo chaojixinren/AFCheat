@@ -9,8 +9,10 @@
 GAME_MODULE = "GameAssembly.dll"
 
 # Amazing Frog PC 版本函数偏移（相对 GameAssembly.dll 基址）
-UNLOCK_OFFSET = 0x740AF0   # IsCostumeItemUnlocked
-AMMO_OFFSET = 0x65BAF0     # get_infiniteAmmo
+# 由 Il2CppDumper 对 Steam 版（il2cpp metadata v31，构建日期 2025-05-05）导出。
+# 若游戏更新导致偏移失效，用 Il2CppDumper 重新导出下列方法的 RVA 即可。
+UNLOCK_OFFSET = 0x731940   # fjSavedInformation.IsCostumeItemUnlocked(string id) -> bool
+AMMO_OFFSET = 0x645AF0     # fjGameModeInformation.get_infiniteAmmo() -> bool
 
 # 强制函数返回 true：mov rax, 1; ret
 FORCE_RETURN_TRUE = bytes([0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, 0xC3])
@@ -31,7 +33,7 @@ GAME_PROCESS_NAMES = (
 # ---------------------------------------------------------------------------
 # 窗口
 # ---------------------------------------------------------------------------
-WINDOW_TITLE = "AFCheat v1.0 -by 超級の新人"
+WINDOW_TITLE = "AFCheat v1.0.1 -by 超級の新人"
 WINDOW_SIZE = "1000x800"
 WINDOW_MINSIZE = (960, 720)
 
