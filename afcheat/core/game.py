@@ -12,10 +12,14 @@ from ..constants import (
     AMMO_ORIGINAL_BYTES,
     APP_ORIGINAL_BYTES,
     APP_UNLOCK_OFFSET,
+    DISK_OFFSET,
+    DISK_ORIGINAL_BYTES,
     FORCE_RETURN_TRUE,
     FUNCTION_PROLOGUE_BYTES,
     GAME_MODULE,
     MONEY_PATCHES,
+    TOY_OFFSET,
+    TOY_ORIGINAL_BYTES,
     UNLOCK_OFFSET,
     UNLOCK_ORIGINAL_BYTES,
 )
@@ -32,9 +36,13 @@ class AmazingFrogCheat:
         self.unlock_addr = None
         self.ammo_check_addr = None
         self.app_unlock_addr = None
+        self.toy_unlock_addr = None
+        self.disk_unlock_addr = None
         self.original_unlock_bytes = None
         self.original_ammo_bytes = None
         self.original_app_unlock_bytes = None
+        self.original_toy_bytes = None
+        self.original_disk_bytes = None
         self.original_money_patches = None
 
         # 进程相关
@@ -44,6 +52,8 @@ class AmazingFrogCheat:
         self.costume_unlocked = False
         self.infinite_ammo_enabled = False
         self.apps_unlocked = False
+        self.toys_unlocked = False
+        self.disks_unlocked = False
         self.infinite_money_enabled = False
 
     def set_target_process(self, pid: int, process_name: str):
@@ -121,6 +131,20 @@ class AmazingFrogCheat:
         self.app_unlock_addr = self._locate_function(APP_UNLOCK_OFFSET)
         return self.app_unlock_addr is not None
 
+    def find_toy_unlock_function(self) -> bool:
+        """查找玩具解锁判定函数地址（fjSavedInformation.IsItemUnlocked）。"""
+        if not self.gameassembly_base and not self.get_base_address():
+            return False
+        self.toy_unlock_addr = self._locate_function(TOY_OFFSET)
+        return self.toy_unlock_addr is not None
+
+    def find_disk_unlock_function(self) -> bool:
+        """查找软盘解锁判定函数地址（fjSavedInformation.IsFAPSDiskUnlocked）。"""
+        if not self.gameassembly_base and not self.get_base_address():
+            return False
+        self.disk_unlock_addr = self._locate_function(DISK_OFFSET)
+        return self.disk_unlock_addr is not None
+
     def _apply_force_true(self, addr: int, expected: bytes):
         """应用 FORCE_RETURN_TRUE，返回可用于恢复的原始字节；失败返回 None。
 
@@ -196,18 +220,48 @@ class AmazingFrogCheat:
             logger.exception("解锁手机 APP 补丁写入失败")
             return False
 
-    def enable_infinite_money(self) -> bool:
-        """启用无限金钱：把显示路径直接读取的几个函数/指令改为固定返回大数。"""
-        if not self.gameassembly_base and not self.get_base_address():
+    def unlock_all_toys(self) -> bool:
+        """解锁所有玩具（强制道具解锁判定为已解锁）"""
+        if not self.toy_unlock_addr:
             return False
+        try:
+            original = self._apply_force_true(self.toy_unlock_addr, TOY_ORIGINAL_BYTES)
+            if original is None:
+                return False
+            self.original_toy_bytes = original
+            self.toys_unlocked = True
+            return True
+        except Exception:
+            logger.exception("解锁玩具补丁写入失败")
+            return False
+
+    def unlock_all_disks(self) -> bool:
+        """解锁所有软盘（强制 FAPS 地图软盘判定为已解锁）"""
+        if not self.disk_unlock_addr:
+            return False
+        try:
+            original = self._apply_force_true(self.disk_unlock_addr, DISK_ORIGINAL_BYTES)
+            if original is None:
+                return False
+            self.original_disk_bytes = original
+            self.disks_unlocked = True
+            return True
+        except Exception:
+            logger.exception("解锁软盘补丁写入失败")
+            return False
+
+    def _apply_patches(self, patches, label: str):
+        """按 (RVA, 期望原字节, 补丁字节) 逐项校验后写入，返回 [(addr, 原字节)]；失败返回 None。"""
+        if not self.gameassembly_base and not self.get_base_address():
+            return None
 
         saved = []
         try:
-            for offset, expected, patch in MONEY_PATCHES:
+            for offset, expected, patch in patches:
                 addr = self.gameassembly_base + offset
                 original = memory.read_bytes(addr, len(patch))
                 if not original or len(original) < len(patch):
-                    logger.warning("读取金钱补丁目标 0x%X 失败，跳过", offset)
+                    logger.warning("读取%s补丁目标 0x%X 失败，跳过", label, offset)
                     continue
                 if original[:len(expected)] == expected:
                     memory.write_bytes(addr, patch)
@@ -217,33 +271,58 @@ class AmazingFrogCheat:
                     saved.append((addr, expected))
                 else:
                     logger.warning(
-                        "金钱补丁目标 0x%X 字节不匹配（游戏可能已更新），跳过：%s",
-                        offset, original.hex(" "),
+                        "%s补丁目标 0x%X 字节不匹配（游戏可能已更新），跳过：%s",
+                        label, offset, original.hex(" "),
                     )
                     continue
-
-            if not saved:
-                return False
-
-            self.original_money_patches = saved
-            self.infinite_money_enabled = True
-            return True
-
+            return saved
         except Exception:
-            logger.exception("无限金钱补丁写入失败")
+            logger.exception("%s补丁写入失败，回滚", label)
             for addr, original in reversed(saved):
                 try:
                     memory.write_bytes(addr, original)
                 except Exception:
-                    logger.exception("回滚金钱补丁 0x%X 失败", addr)
+                    logger.exception("回滚%s补丁 0x%X 失败", label, addr)
+            return None
+
+    def _restore_patches(self, saved, patches, label: str) -> bool:
+        """还原补丁；saved 缺失时对当前仍是补丁态的目标用已知原字节兜底。"""
+        if not saved:
+            if not self.gameassembly_base and not self.get_base_address():
+                return False
+            saved = []
+            for offset, expected, patch in patches:
+                addr = self.gameassembly_base + offset
+                current = memory.read_bytes(addr, len(patch))
+                if current and current[:len(patch)] == patch:
+                    saved.append((addr, expected))
+            if not saved:
+                return False
+        try:
+            for addr, original in saved:
+                memory.write_bytes(addr, original)
+            return True
+        except Exception:
+            logger.exception("恢复%s修改失败", label)
             return False
 
-    def restore_original(self) -> tuple[bool, bool, bool, bool]:
+    def enable_infinite_money(self) -> bool:
+        """启用无限金钱：把显示路径直接读取的几个函数/指令改为固定返回大数。"""
+        saved = self._apply_patches(MONEY_PATCHES, "无限金钱")
+        if not saved:
+            return False
+        self.original_money_patches = saved
+        self.infinite_money_enabled = True
+        return True
+
+    def restore_original(self) -> tuple[bool, bool, bool, bool, bool, bool]:
         """恢复原始代码"""
         return (
             self.restore_costume_unlock(),
             self.restore_infinite_ammo(),
             self.restore_app_unlock(),
+            self.restore_toys_unlock(),
+            self.restore_disks_unlock(),
             self.restore_infinite_money(),
         )
 
@@ -289,27 +368,38 @@ class AmazingFrogCheat:
             logger.exception("恢复手机 APP 解锁修改失败")
             return False
 
+    def restore_toys_unlock(self) -> bool:
+        """仅恢复“解锁全部玩具”相关修改"""
+        if not self.toy_unlock_addr:
+            return False
+        try:
+            ok = self._restore_force_true(self.toy_unlock_addr, self.original_toy_bytes,
+                                          TOY_ORIGINAL_BYTES)
+            if ok:
+                self.toys_unlocked = False
+            return ok
+        except Exception:
+            logger.exception("恢复玩具解锁修改失败")
+            return False
+
+    def restore_disks_unlock(self) -> bool:
+        """仅恢复“解锁全部软盘”相关修改"""
+        if not self.disk_unlock_addr:
+            return False
+        try:
+            ok = self._restore_force_true(self.disk_unlock_addr, self.original_disk_bytes,
+                                          DISK_ORIGINAL_BYTES)
+            if ok:
+                self.disks_unlocked = False
+            return ok
+        except Exception:
+            logger.exception("恢复软盘解锁修改失败")
+            return False
+
     def restore_infinite_money(self) -> bool:
         """仅恢复“无限金钱”相关修改"""
-        targets = self.original_money_patches
-        if not targets:
-            if not self.gameassembly_base and not self.get_base_address():
-                return False
-            # 没有保存的原字节时，对仍处于补丁态的目标用已知原字节兜底还原
-            targets = []
-            for offset, expected, patch in MONEY_PATCHES:
-                addr = self.gameassembly_base + offset
-                current = memory.read_bytes(addr, len(patch))
-                if current and current[:len(patch)] == patch:
-                    targets.append((addr, expected))
-            if not targets:
-                return False
-        try:
-            for addr, original in targets:
-                memory.write_bytes(addr, original)
+        ok = self._restore_patches(self.original_money_patches, MONEY_PATCHES, "无限金钱")
+        if ok:
             self.original_money_patches = None
             self.infinite_money_enabled = False
-            return True
-        except Exception:
-            logger.exception("恢复无限金钱修改失败")
-            return False
+        return ok

@@ -16,6 +16,12 @@ AMMO_OFFSET = 0x645AF0         # fjGameModeInformation.get_infiniteAmmo() -> boo
 # 手机 APP 的主屏图标与点击都由成就系统把关（fjOSAppPageRenderer 内部调用此判定），
 # 强制返回 true 即可解锁所有“需达成成就”的 APP；hideOnHomeScreen 的项仍保持隐藏。
 APP_UNLOCK_OFFSET = 0x7D1030   # fjAchievementObject.IsUnlocked() -> bool
+# 存档里另外两份独立解锁清单（fjSavedInformation），与皮肤同款布尔判定函数。
+#   toys  -> unlockedItems（可生成/拾取的道具）        IsItemUnlocked(string)
+#   disks -> unlockedFAPSIdentities（FAPS 地图软盘）   IsFAPSDiskUnlocked(string)
+# 强制返回 true 即一次性解锁全部。
+TOY_OFFSET = 0x731AF0          # fjSavedInformation.IsItemUnlocked(string) -> bool
+DISK_OFFSET = 0x731A60         # fjSavedInformation.IsFAPSDiskUnlocked(string) -> bool
 # 游戏内货币叫 NADS。界面显示的钱不是每次打开 App 都重新从存档同步，而是直接读
 # fjNADSObject 的缓存字段/属性；只改存档同步源(GetNADSValue)界面不会刷新。
 # 因此「无限金钱」要同时改写下面几处被显示路径直接读取的函数/指令。
@@ -28,6 +34,8 @@ FORCE_RETURN_TRUE = bytes([0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, 0xC3])
 UNLOCK_ORIGINAL_BYTES = bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83])
 AMMO_ORIGINAL_BYTES   = bytes([0x48, 0x83, 0xEC, 0x28, 0x80, 0x3D, 0x29, 0x79])
 APP_ORIGINAL_BYTES    = bytes([0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74])
+TOY_ORIGINAL_BYTES    = bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83])
+DISK_ORIGINAL_BYTES   = bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83])
 # 强制函数返回指定 int：mov eax, <MONEY_VALUE>; ret
 FORCE_RETURN_MONEY = bytes([0xB8]) + MONEY_VALUE.to_bytes(4, "little") + bytes([0xC3])
 # 把 edx 置为 MONEY_VALUE（替换 `mov edx,[rax+0xa8]` 字段读取）：mov edx,<v>; nop
@@ -59,7 +67,7 @@ GAME_PROCESS_NAMES = (
 # ---------------------------------------------------------------------------
 # 窗口
 # ---------------------------------------------------------------------------
-WINDOW_TITLE = "AFCheat v1.0.4 -by 超級の新人"
+WINDOW_TITLE = "AFCheat v1.0.5 -by 超級の新人"
 WINDOW_SIZE = "1000x800"
 WINDOW_MINSIZE = (960, 720)
 

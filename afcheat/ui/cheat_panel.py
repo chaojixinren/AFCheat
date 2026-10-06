@@ -22,6 +22,8 @@ class CheatPanel:
         self.unlock_btn_var = tk.StringVar(value="解锁所有皮肤")
         self.ammo_btn_var = tk.StringVar(value="启用无限子弹")
         self.app_btn_var = tk.StringVar(value="解锁所有APP")
+        self.toy_btn_var = tk.StringVar(value="解锁所有玩具")
+        self.disk_btn_var = tk.StringVar(value="解锁所有软盘")
         self.money_btn_var = tk.StringVar(value="无限金钱")
 
         self._build()
@@ -30,45 +32,48 @@ class CheatPanel:
     def _build(self):
         _, control_frame = card(self.parent, "🎮", "游戏修改功能", row=2)
 
-        # 功能按钮行
+        # 功能按钮行（三列网格）
         features_frame = tk.Frame(control_frame, bg=C.COLOR_CARD)
         features_frame.pack(pady=(0, 10), anchor='center')
 
         self.unlock_btn = ttk.Button(features_frame, textvariable=self.unlock_btn_var,
                                      command=self._unlock_costumes, style='Success.TButton')
-        self.unlock_btn.pack(side='left', padx=(0, 15))
-
         self.ammo_btn = ttk.Button(features_frame, textvariable=self.ammo_btn_var,
                                    command=self._enable_infinite_ammo, style='Success.TButton')
-        self.ammo_btn.pack(side='left', padx=(0, 15))
-
         self.app_btn = ttk.Button(features_frame, textvariable=self.app_btn_var,
                                   command=self._unlock_apps, style='Success.TButton')
-        self.app_btn.pack(side='left', padx=(0, 15))
-
+        self.toy_btn = ttk.Button(features_frame, textvariable=self.toy_btn_var,
+                                  command=self._unlock_toys, style='Success.TButton')
+        self.disk_btn = ttk.Button(features_frame, textvariable=self.disk_btn_var,
+                                   command=self._unlock_disks, style='Success.TButton')
         self.money_btn = ttk.Button(features_frame, textvariable=self.money_btn_var,
                                     command=self._enable_infinite_money, style='Success.TButton')
-        self.money_btn.pack(side='left')
 
-        # 恢复按钮行
+        feature_btns = (self.unlock_btn, self.ammo_btn, self.app_btn,
+                        self.toy_btn, self.disk_btn, self.money_btn)
+        self._grid_buttons(features_frame, feature_btns)
+
+        # 恢复按钮行（三列网格）
         restore_frame = tk.Frame(control_frame, bg=C.COLOR_CARD)
         restore_frame.pack(pady=(0, 20), anchor='center')
 
         self.restore_unlock_btn = ttk.Button(restore_frame, text="恢复皮肤解锁",
                                              command=self._restore_costume_unlock_only, style='Danger.TButton')
-        self.restore_unlock_btn.pack(side='left', padx=(0, 15))
-
         self.restore_ammo_btn = ttk.Button(restore_frame, text="恢复无限子弹",
                                            command=self._restore_infinite_ammo_only, style='Danger.TButton')
-        self.restore_ammo_btn.pack(side='left', padx=(0, 15))
-
         self.restore_app_btn = ttk.Button(restore_frame, text="恢复APP解锁",
                                           command=self._restore_app_unlock_only, style='Danger.TButton')
-        self.restore_app_btn.pack(side='left', padx=(0, 15))
-
+        self.restore_toy_btn = ttk.Button(restore_frame, text="恢复玩具解锁",
+                                          command=self._restore_toys_only, style='Danger.TButton')
+        self.restore_disk_btn = ttk.Button(restore_frame, text="恢复软盘解锁",
+                                           command=self._restore_disks_only, style='Danger.TButton')
         self.restore_money_btn = ttk.Button(restore_frame, text="恢复无限金钱",
                                             command=self._restore_infinite_money_only, style='Danger.TButton')
-        self.restore_money_btn.pack(side='left')
+
+        restore_btns = (self.restore_unlock_btn, self.restore_ammo_btn, self.restore_app_btn,
+                        self.restore_toy_btn, self.restore_disk_btn,
+                        self.restore_money_btn)
+        self._grid_buttons(restore_frame, restore_btns)
 
         # 状态显示
         status_frame = tk.Frame(control_frame, bg=C.COLOR_SUBTLE, relief='flat', bd=0)
@@ -87,6 +92,14 @@ class CheatPanel:
                  fg=C.COLOR_TEXT_STRONG, bg=C.COLOR_SUBTLE).pack(side='left', padx=(0, 8))
         tk.Label(status_content, textvariable=self.status_var, font=(C.FONT_FAMILY, 10, "bold"),
                  fg=C.COLOR_STATUS, bg=C.COLOR_SUBTLE).pack(side='left')
+
+    @staticmethod
+    def _grid_buttons(parent: tk.Misc, buttons, columns: int = 3):
+        """把按钮按固定列数排成网格，各列等宽。"""
+        for col in range(columns):
+            parent.columnconfigure(col, weight=1, uniform="btn")
+        for i, btn in enumerate(buttons):
+            btn.grid(row=i // columns, column=i % columns, padx=8, pady=4, sticky='ew')
 
     # ------------------------------------------------------------------ 工具
     def _ui(self, fn):
@@ -216,6 +229,76 @@ class CheatPanel:
         self.app_btn.configure(state="disabled")
         messagebox.showinfo("📱 解锁成功！", "所有需达成成就的手机 APP 已解锁！\n打开游戏内手机即可看到新 APP。")
 
+    def _unlock_toys(self):
+        """解锁所有玩具"""
+        if not self._require_process():
+            return
+
+        def worker():
+            try:
+                self.status_var.set("正在查找函数...")
+                if not self.cheat.find_toy_unlock_function():
+                    self.status_var.set("❌ 未找到玩具解锁函数")
+                    self._ui(lambda: messagebox.showerror(
+                        "错误", "无法找到玩具解锁函数。\n请确保游戏正在运行且版本匹配。"))
+                    return
+
+                self.status_var.set("正在解锁所有玩具...")
+                if self.cheat.unlock_all_toys():
+                    self._ui(self._on_toy_success)
+                else:
+                    self.status_var.set("❌ 解锁失败，请检查权限和游戏状态")
+                    self._ui(lambda: messagebox.showerror(
+                        "❌ 解锁失败", "玩具解锁失败。\n请确保游戏正在运行并以管理员权限启动程序。"))
+
+            except Exception as e:
+                logger.exception("解锁玩具时发生错误")
+                self.status_var.set("❌ 发生错误")
+                self._ui(lambda: messagebox.showerror("错误", f"解锁过程中发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_toy_success(self):
+        self.status_var.set("🧸 所有玩具已解锁！")
+        self.toy_btn_var.set("✅ 已解锁所有玩具")
+        self.toy_btn.configure(state="disabled")
+        messagebox.showinfo("🧸 解锁成功！", "所有玩具已解锁！\n打开游戏内的玩具菜单即可看到新道具。")
+
+    def _unlock_disks(self):
+        """解锁所有软盘"""
+        if not self._require_process():
+            return
+
+        def worker():
+            try:
+                self.status_var.set("正在查找函数...")
+                if not self.cheat.find_disk_unlock_function():
+                    self.status_var.set("❌ 未找到软盘解锁函数")
+                    self._ui(lambda: messagebox.showerror(
+                        "错误", "无法找到软盘解锁函数。\n请确保游戏正在运行且版本匹配。"))
+                    return
+
+                self.status_var.set("正在解锁所有软盘...")
+                if self.cheat.unlock_all_disks():
+                    self._ui(self._on_disk_success)
+                else:
+                    self.status_var.set("❌ 解锁失败，请检查权限和游戏状态")
+                    self._ui(lambda: messagebox.showerror(
+                        "❌ 解锁失败", "软盘解锁失败。\n请确保游戏正在运行并以管理员权限启动程序。"))
+
+            except Exception as e:
+                logger.exception("解锁软盘时发生错误")
+                self.status_var.set("❌ 发生错误")
+                self._ui(lambda: messagebox.showerror("错误", f"解锁过程中发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_disk_success(self):
+        self.status_var.set("💾 所有软盘已解锁！打开 FAPS 终端查看")
+        self.disk_btn_var.set("✅ 已解锁所有软盘")
+        self.disk_btn.configure(state="disabled")
+        messagebox.showinfo("💾 解锁成功！", "所有软盘已解锁！\n打开游戏内 FAPS 终端 / 关卡选择即可看到新地图。")
+
     def _enable_infinite_money(self):
         """启用无限金钱（NADS）"""
         if not self._require_process():
@@ -297,6 +380,36 @@ class CheatPanel:
                 logger.exception("恢复 APP 解锁时发生错误")
                 self.status_var.set("❌ 恢复失败")
                 self._ui(lambda: messagebox.showerror("错误", f"恢复 APP 解锁时发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _restore_toys_only(self):
+        """仅恢复“解锁全部玩具”修改"""
+        def worker():
+            try:
+                self.status_var.set("正在恢复玩具解锁修改...")
+                ok = self.cheat.restore_toys_unlock()
+                self._ui(lambda: self._on_restore_done(
+                    ok, "玩具解锁", self.toy_btn_var, self.toy_btn, "解锁所有玩具"))
+            except Exception as e:
+                logger.exception("恢复玩具解锁时发生错误")
+                self.status_var.set("❌ 恢复失败")
+                self._ui(lambda: messagebox.showerror("错误", f"恢复玩具解锁时发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _restore_disks_only(self):
+        """仅恢复“解锁全部软盘”修改"""
+        def worker():
+            try:
+                self.status_var.set("正在恢复软盘解锁修改...")
+                ok = self.cheat.restore_disks_unlock()
+                self._ui(lambda: self._on_restore_done(
+                    ok, "软盘解锁", self.disk_btn_var, self.disk_btn, "解锁所有软盘"))
+            except Exception as e:
+                logger.exception("恢复软盘解锁时发生错误")
+                self.status_var.set("❌ 恢复失败")
+                self._ui(lambda: messagebox.showerror("错误", f"恢复软盘解锁时发生错误：\n{e}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
