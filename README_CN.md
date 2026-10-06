@@ -11,7 +11,7 @@ AFCheat 是一个对 Windows 平台的《Amazing Frog》单机游戏修改器，
 ## 技术栈
 - 语言：Python 3
 - GUI：`tkinter`
-- 进程与内存操作：`ctypes`（调用 `kernel32` / `psapi`）、`KittyMemory.py`
+- 进程与内存操作：`ctypes`（调用 `kernel32` / `psapi`）、`afcheat/core/memory.py`
 - 进程枚举：`psutil`
 - 平台：Windows（需要管理员权限以写入其他进程内存）
 

@@ -13,7 +13,7 @@ AFCheat is a Windows trainer for the single-player game Amazing Frog. It provide
 ## Tech Stack
 - Language: Python 3
 - GUI: `tkinter`
-- Memory operations: `ctypes` (calling `kernel32` / `psapi`), implemented in `KittyMemory.py`
+- Memory operations: `ctypes` (calling `kernel32` / `psapi`), implemented in `afcheat/core/memory.py`
 - Process enumeration: `psutil`
 - Platform: Windows (requires administrator privileges for writing another process memory)
 

@@ -1,17 +1,19 @@
-"""
-KittyMemory - Windows进程内存操作库
-用于读取和写入其他进程的内存
+"""Windows 进程内存操作（原 KittyMemory）。
+
+用于读取和写入其他进程的内存。
 
 依赖：
-- ctypes (Python标准库)
-- Windows API (kernel32.dll)
+- ctypes (Python 标准库)
+- Windows API (kernel32.dll / psapi.dll)
 
-注意：需要管理员权限才能修改其他进程的内存
+注意：需要管理员权限才能修改其他进程的内存。
 """
 
 import ctypes
 from ctypes import wintypes
 from typing import Optional
+
+from ..constants import GAME_PROCESS_NAMES
 
 # Windows API常量
 PROCESS_ALL_ACCESS = 0x1F0FFF
@@ -31,15 +33,49 @@ kernel32 = ctypes.windll.kernel32
 psapi = ctypes.windll.psapi
 
 
+class _PROCESSENTRY32(ctypes.Structure):
+    """CreateToolhelp32Snapshot 进程条目结构（原先在两处重复定义）。"""
+
+    _fields_ = [
+        ("dwSize", ctypes.c_ulong),
+        ("cntUsage", ctypes.c_ulong),
+        ("th32ProcessID", ctypes.c_ulong),
+        ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+        ("th32ModuleID", ctypes.c_ulong),
+        ("cntThreads", ctypes.c_ulong),
+        ("th32ParentProcessID", ctypes.c_ulong),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", ctypes.c_ulong),
+        ("szExeFile", ctypes.c_char * 260),
+    ]
+
+
+class _MODULEENTRY32(ctypes.Structure):
+    """CreateToolhelp32Snapshot 模块条目结构。"""
+
+    _fields_ = [
+        ("dwSize", ctypes.c_ulong),
+        ("th32ModuleID", ctypes.c_ulong),
+        ("th32ProcessID", ctypes.c_ulong),
+        ("GlblcntUsage", ctypes.c_ulong),
+        ("ProccntUsage", ctypes.c_ulong),
+        ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
+        ("modBaseSize", ctypes.c_ulong),
+        ("hModule", wintypes.HMODULE),
+        ("szModule", ctypes.c_char * 256),
+        ("szExePath", ctypes.c_char * 260),
+    ]
+
+
 class KittyMemory:
     """Windows进程内存操作类"""
-    
+
     def __init__(self):
         self.process_handle = None
         self.process_id = None
         self.process_name = None
         self.force_pid = None  # 用于强制指定进程ID
-    
+
     def _ensure_process_open(self) -> bool:
         """确保进程已打开"""
         if self.process_handle:
@@ -67,15 +103,7 @@ class KittyMemory:
                 self.force_pid = None
 
         # 尝试打开进程 - 支持多种进程名变体
-        game_processes = [
-            'AmazingFrog.exe',
-            'Amazing Frog.exe',
-            'AmazingFrog',
-            'Amazing Frog',
-            'amazingfrog.exe',
-            'amazing frog.exe'
-        ]
-        for proc_name in game_processes:
+        for proc_name in GAME_PROCESS_NAMES:
             pid = self._get_process_id(proc_name)
             if pid:
                 self.process_id = pid
@@ -123,42 +151,28 @@ class KittyMemory:
         # 创建进程快照
         TH32CS_SNAPPROCESS = 0x2
         h_snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-        
+
         if h_snapshot == -1:
             return None
-        
-        class PROCESSENTRY32(ctypes.Structure):
-            _fields_ = [
-                ("dwSize", ctypes.c_ulong),
-                ("cntUsage", ctypes.c_ulong),
-                ("th32ProcessID", ctypes.c_ulong),
-                ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
-                ("th32ModuleID", ctypes.c_ulong),
-                ("cntThreads", ctypes.c_ulong),
-                ("th32ParentProcessID", ctypes.c_ulong),
-                ("pcPriClassBase", ctypes.c_long),
-                ("dwFlags", ctypes.c_ulong),
-                ("szExeFile", ctypes.c_char * 260),
-            ]
-        
-        pe32 = PROCESSENTRY32()
-        pe32.dwSize = ctypes.sizeof(PROCESSENTRY32)
-        
+
+        pe32 = _PROCESSENTRY32()
+        pe32.dwSize = ctypes.sizeof(_PROCESSENTRY32)
+
         if not kernel32.Process32First(h_snapshot, ctypes.byref(pe32)):
             kernel32.CloseHandle(h_snapshot)
             return None
-        
+
         while True:
             if pe32.szExeFile.decode('utf-8', errors='ignore').lower() == process_name.lower():
                 kernel32.CloseHandle(h_snapshot)
                 return pe32.th32ProcessID
-            
+
             if not kernel32.Process32Next(h_snapshot, ctypes.byref(pe32)):
                 break
-        
+
         kernel32.CloseHandle(h_snapshot)
         return None
-    
+
     def _open_process(self, process_id: int) -> Optional[int]:
         """打开进程句柄"""
         handle = kernel32.OpenProcess(
@@ -177,22 +191,8 @@ class KittyMemory:
         if h_snapshot == -1:
             return None
 
-        class PROCESSENTRY32(ctypes.Structure):
-            _fields_ = [
-                ("dwSize", ctypes.c_ulong),
-                ("cntUsage", ctypes.c_ulong),
-                ("th32ProcessID", ctypes.c_ulong),
-                ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
-                ("th32ModuleID", ctypes.c_ulong),
-                ("cntThreads", ctypes.c_ulong),
-                ("th32ParentProcessID", ctypes.c_ulong),
-                ("pcPriClassBase", ctypes.c_long),
-                ("dwFlags", ctypes.c_ulong),
-                ("szExeFile", ctypes.c_char * 260),
-            ]
-
-        pe32 = PROCESSENTRY32()
-        pe32.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        pe32 = _PROCESSENTRY32()
+        pe32.dwSize = ctypes.sizeof(_PROCESSENTRY32)
 
         if not kernel32.Process32First(h_snapshot, ctypes.byref(pe32)):
             kernel32.CloseHandle(h_snapshot)
@@ -208,13 +208,13 @@ class KittyMemory:
 
         kernel32.CloseHandle(h_snapshot)
         return None
-    
+
     def _get_module_base_address(self, process_handle: int, module_name: str) -> Optional[int]:
         """获取模块基址"""
         # 方法1: 使用EnumProcessModules
         modules = (ctypes.POINTER(wintypes.HMODULE) * 1024)()
         needed = ctypes.c_ulong()
-        
+
         if psapi.EnumProcessModules(
             process_handle,
             ctypes.byref(modules),
@@ -222,11 +222,11 @@ class KittyMemory:
             ctypes.byref(needed)
         ):
             module_count = needed.value // ctypes.sizeof(wintypes.HMODULE)
-            
+
             for i in range(module_count):
                 module_handle = modules[i]
                 module_name_buf = ctypes.create_string_buffer(260)
-                
+
                 if psapi.GetModuleBaseNameA(
                     process_handle,
                     module_handle,
@@ -235,61 +235,47 @@ class KittyMemory:
                 ):
                     if module_name_buf.value.decode('utf-8', errors='ignore').lower() == module_name.lower():
                         return ctypes.cast(module_handle, ctypes.c_void_p).value
-        
+
         # 方法2: 使用CreateToolhelp32Snapshot
         TH32CS_SNAPMODULE = 0x8
         TH32CS_SNAPMODULE32 = 0x10
-        
+
         h_snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, self.process_id)
         if h_snapshot == -1:
             return None
-        
-        class MODULEENTRY32(ctypes.Structure):
-            _fields_ = [
-                ("dwSize", ctypes.c_ulong),
-                ("th32ModuleID", ctypes.c_ulong),
-                ("th32ProcessID", ctypes.c_ulong),
-                ("GlblcntUsage", ctypes.c_ulong),
-                ("ProccntUsage", ctypes.c_ulong),
-                ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
-                ("modBaseSize", ctypes.c_ulong),
-                ("hModule", wintypes.HMODULE),
-                ("szModule", ctypes.c_char * 256),
-                ("szExePath", ctypes.c_char * 260),
-            ]
-        
-        me32 = MODULEENTRY32()
-        me32.dwSize = ctypes.sizeof(MODULEENTRY32)
-        
+
+        me32 = _MODULEENTRY32()
+        me32.dwSize = ctypes.sizeof(_MODULEENTRY32)
+
         if kernel32.Module32First(h_snapshot, ctypes.byref(me32)):
             while True:
                 if me32.szModule.decode('utf-8', errors='ignore').lower() == module_name.lower():
                     base_addr = ctypes.cast(me32.modBaseAddr, ctypes.c_void_p).value
                     kernel32.CloseHandle(h_snapshot)
                     return base_addr
-                
+
                 if not kernel32.Module32Next(h_snapshot, ctypes.byref(me32)):
                     break
-        
+
         kernel32.CloseHandle(h_snapshot)
         return None
-    
+
     def get_base_address(self, module_name: str) -> Optional[int]:
         """获取指定模块的基址"""
         if not self._ensure_process_open():
             return None
-        
+
         # 获取模块基址
         return self._get_module_base_address(self.process_handle, module_name)
-    
+
     def read_bytes(self, address: int, length: int) -> Optional[bytes]:
         """从指定地址读取内存"""
         if not self._ensure_process_open():
             raise Exception("无法打开进程，请确保游戏正在运行")
-        
+
         buffer = ctypes.create_string_buffer(length)
         bytes_read = ctypes.c_size_t()
-        
+
         if kernel32.ReadProcessMemory(
             self.process_handle,
             ctypes.c_void_p(address),
@@ -301,12 +287,12 @@ class KittyMemory:
         else:
             error = kernel32.GetLastError()
             raise Exception(f"读取内存失败，错误代码: {error}")
-    
+
     def write_bytes(self, address: int, data: bytes) -> bool:
         """向指定地址写入内存"""
         if not self._ensure_process_open():
             raise Exception("无法打开进程，请确保游戏正在运行")
-        
+
         # 修改内存保护属性
         old_protect = wintypes.DWORD()
         if not kernel32.VirtualProtectEx(
@@ -318,11 +304,11 @@ class KittyMemory:
         ):
             error = kernel32.GetLastError()
             raise Exception(f"修改内存保护失败，错误代码: {error}")
-        
+
         # 写入内存
         bytes_written = ctypes.c_size_t()
         buffer = ctypes.create_string_buffer(data)
-        
+
         success = kernel32.WriteProcessMemory(
             self.process_handle,
             ctypes.c_void_p(address),
@@ -330,47 +316,48 @@ class KittyMemory:
             len(data),
             ctypes.byref(bytes_written)
         )
-        
+
         # 恢复内存保护属性
+        restore_protect = wintypes.DWORD()
         kernel32.VirtualProtectEx(
             self.process_handle,
             ctypes.c_void_p(address),
             len(data),
             old_protect,
-            ctypes.byref(old_protect)
+            ctypes.byref(restore_protect)
         )
-        
+
         if not success:
             error = kernel32.GetLastError()
             raise Exception(f"写入内存失败，错误代码: {error}")
-        
+
         return bytes_written.value == len(data)
-    
+
     def pattern_scan(self, pattern: bytes, start_address: int, end_address: int) -> Optional[int]:
         """在内存范围内搜索字节模式"""
         if not self._ensure_process_open():
             return None
-        
+
         chunk_size = 0x10000  # 64KB chunks
         current_addr = start_address
-        
+
         while current_addr < end_address:
             try:
                 read_size = min(chunk_size, end_address - current_addr)
                 data = self.read_bytes(current_addr, read_size)
-                
+
                 if data:
                     # 在数据中搜索模式
                     index = data.find(pattern)
                     if index != -1:
                         return current_addr + index
-                
+
                 current_addr += read_size
-            except:
+            except Exception:
                 current_addr += chunk_size
-        
+
         return None
-    
+
     def close(self):
         """关闭进程句柄"""
         if self.process_handle:
