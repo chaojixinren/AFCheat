@@ -22,6 +22,7 @@ class CheatPanel:
         self.unlock_btn_var = tk.StringVar(value="解锁所有皮肤")
         self.ammo_btn_var = tk.StringVar(value="启用无限子弹")
         self.app_btn_var = tk.StringVar(value="解锁所有APP")
+        self.money_btn_var = tk.StringVar(value="无限金钱")
 
         self._build()
 
@@ -43,7 +44,11 @@ class CheatPanel:
 
         self.app_btn = ttk.Button(features_frame, textvariable=self.app_btn_var,
                                   command=self._unlock_apps, style='Success.TButton')
-        self.app_btn.pack(side='left')
+        self.app_btn.pack(side='left', padx=(0, 15))
+
+        self.money_btn = ttk.Button(features_frame, textvariable=self.money_btn_var,
+                                    command=self._enable_infinite_money, style='Success.TButton')
+        self.money_btn.pack(side='left')
 
         # 恢复按钮行
         restore_frame = tk.Frame(control_frame, bg=C.COLOR_CARD)
@@ -59,7 +64,11 @@ class CheatPanel:
 
         self.restore_app_btn = ttk.Button(restore_frame, text="恢复APP解锁",
                                           command=self._restore_app_unlock_only, style='Danger.TButton')
-        self.restore_app_btn.pack(side='left')
+        self.restore_app_btn.pack(side='left', padx=(0, 15))
+
+        self.restore_money_btn = ttk.Button(restore_frame, text="恢复无限金钱",
+                                            command=self._restore_infinite_money_only, style='Danger.TButton')
+        self.restore_money_btn.pack(side='left')
 
         # 状态显示
         status_frame = tk.Frame(control_frame, bg=C.COLOR_SUBTLE, relief='flat', bd=0)
@@ -207,6 +216,45 @@ class CheatPanel:
         self.app_btn.configure(state="disabled")
         messagebox.showinfo("📱 解锁成功！", "所有需达成成就的手机 APP 已解锁！\n打开游戏内手机即可看到新 APP。")
 
+    def _enable_infinite_money(self):
+        """启用无限金钱（NADS）"""
+        if not self._require_process():
+            return
+
+        def worker():
+            try:
+                self.status_var.set("正在查找函数...")
+                if not self.cheat.find_money_function():
+                    self.status_var.set("❌ 未找到金钱函数")
+                    self._ui(lambda: messagebox.showerror(
+                        "错误", "无法找到金钱函数。\n请确保游戏正在运行且版本匹配。"))
+                    return
+
+                self.status_var.set("正在启用无限金钱...")
+                if self.cheat.enable_infinite_money():
+                    self._ui(self._on_money_success)
+                else:
+                    self.status_var.set("❌ 无限金钱启用失败")
+                    self._ui(lambda: messagebox.showerror(
+                        "❌ 启用失败", "无限金钱启用失败。\n请确保游戏正在运行并以管理员权限启动程序。"))
+
+            except Exception as e:
+                logger.exception("启用无限金钱时发生错误")
+                self.status_var.set("❌ 发生错误")
+                self._ui(lambda: messagebox.showerror("错误", f"启用过程中发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_money_success(self):
+        amount = f"{C.MONEY_VALUE:,}"
+        self.status_var.set(f"💰 无限金钱已激活！数值 {amount}")
+        self.money_btn_var.set("✅ 无限金钱已启用")
+        self.money_btn.configure(state="disabled")
+        messagebox.showinfo(
+            "💰 无限金钱激活！",
+            f"金钱功能已成功启用！\n打开游戏内「银行 / 口袋」等 App 即可看到金额变为 {amount}。\n"
+            "若 App 已经打开，请关闭后重新打开一次。")
+
     def _restore_costume_unlock_only(self):
         """仅恢复“解锁全部皮肤”修改"""
         def worker():
@@ -249,6 +297,21 @@ class CheatPanel:
                 logger.exception("恢复 APP 解锁时发生错误")
                 self.status_var.set("❌ 恢复失败")
                 self._ui(lambda: messagebox.showerror("错误", f"恢复 APP 解锁时发生错误：\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _restore_infinite_money_only(self):
+        """仅恢复“无限金钱”修改"""
+        def worker():
+            try:
+                self.status_var.set("正在恢复无限金钱修改...")
+                ok = self.cheat.restore_infinite_money()
+                self._ui(lambda: self._on_restore_done(
+                    ok, "无限金钱", self.money_btn_var, self.money_btn, "无限金钱"))
+            except Exception as e:
+                logger.exception("恢复无限金钱时发生错误")
+                self.status_var.set("❌ 恢复失败")
+                self._ui(lambda: messagebox.showerror("错误", f"恢复无限金钱时发生错误：\n{e}"))
 
         threading.Thread(target=worker, daemon=True).start()
 

@@ -16,9 +16,27 @@ AMMO_OFFSET = 0x645AF0         # fjGameModeInformation.get_infiniteAmmo() -> boo
 # 手机 APP 的主屏图标与点击都由成就系统把关（fjOSAppPageRenderer 内部调用此判定），
 # 强制返回 true 即可解锁所有“需达成成就”的 APP；hideOnHomeScreen 的项仍保持隐藏。
 APP_UNLOCK_OFFSET = 0x7D1030   # fjAchievementObject.IsUnlocked() -> bool
+# 游戏内货币叫 NADS。界面显示的钱不是每次打开 App 都重新从存档同步，而是直接读
+# fjNADSObject 的缓存字段/属性；只改存档同步源(GetNADSValue)界面不会刷新。
+# 因此「无限金钱」要同时改写下面几处被显示路径直接读取的函数/指令。
+MONEY_VALUE = 999_999_999
 
 # 强制函数返回 true：mov rax, 1; ret
 FORCE_RETURN_TRUE = bytes([0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, 0xC3])
+# 强制函数返回指定 int：mov eax, <MONEY_VALUE>; ret
+FORCE_RETURN_MONEY = bytes([0xB8]) + MONEY_VALUE.to_bytes(4, "little") + bytes([0xC3])
+# 把 edx 置为 MONEY_VALUE（替换 `mov edx,[rax+0xa8]` 字段读取）：mov edx,<v>; nop
+FORCE_EDX_MONEY = bytes([0xBA]) + MONEY_VALUE.to_bytes(4, "little") + bytes([0x90])
+
+# 「无限金钱」补丁集合：(RVA, 期望原字节, 替换字节)。写前校验原字节，游戏更新导致
+# 偏移失效时会跳过该项而不是写坏代码。
+MONEY_PATCHES = (
+    (0x68F380, bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x48]), FORCE_RETURN_MONEY),  # fjNADSObject.GetValue(fjAvatar) -> int（口袋/银行取款）
+    (0x68F220, bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x57]), FORCE_RETURN_MONEY),  # fjNADSObject.GetValue(string) -> int（手机 NADS App）
+    (0x68FBF0, bytes([0x8B, 0x81, 0xA8, 0x00, 0x00, 0x00]), FORCE_RETURN_MONEY),  # fjNADSObject.get_worldValue() -> int
+    (0x733360, bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x48]), FORCE_RETURN_MONEY),  # fjSavedWorld.GetNADSValue(...) -> int（存档同步源）
+    (0x9DE687, bytes([0x8B, 0x90, 0xA8, 0x00, 0x00, 0x00]), FORCE_EDX_MONEY),     # fjUINADSAppPanel.RenderAppData 读 _worldValue 的指令
+)
 
 # 函数首字节可能是这些值之一（用于粗判偏移是否命中函数入口）
 FUNCTION_PROLOGUE_BYTES = (0x40, 0x48, 0x55, 0xE9)
@@ -36,7 +54,7 @@ GAME_PROCESS_NAMES = (
 # ---------------------------------------------------------------------------
 # 窗口
 # ---------------------------------------------------------------------------
-WINDOW_TITLE = "AFCheat v1.0.2 -by 超級の新人"
+WINDOW_TITLE = "AFCheat v1.0.3 -by 超級の新人"
 WINDOW_SIZE = "1000x800"
 WINDOW_MINSIZE = (960, 720)
 
