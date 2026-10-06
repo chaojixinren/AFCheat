@@ -1,7 +1,7 @@
 # AFCheat (Amazing Frog 修改器)
 
 ## 简介
-AFCheat 是一个对 Windows 平台的《Amazing Frog》单机游戏修改器，提供图形界面，允许用户通过内存修改实现解锁皮肤、启用无限子弹等功能。
+AFCheat 是一个对 Windows 平台的《Amazing Frog》单机游戏修改器，提供图形界面，允许用户通过内存修改实现解锁皮肤、解锁手机 APP、启用无限子弹等功能。
 
 ## 原理
 - 使用 Windows API打开游戏进程句柄并读写进程内存。
@@ -19,6 +19,7 @@ AFCheat 是一个对 Windows 平台的《Amazing Frog》单机游戏修改器，
 - 列出并选择运行中的进程
 - 验证并定位 `GameAssembly.dll` 基址
 - 解锁所有皮肤（服装）
+- 解锁所有手机 APP
 - 启用/恢复无限子弹
 - 恢复为原始内存状态
 

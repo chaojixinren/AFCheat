@@ -1,7 +1,7 @@
 # AFCheat (Amazing Frog Trainer)
 
 ## Overview
-AFCheat is a Windows trainer for the single-player game Amazing Frog. It provides a GUI to modify game memory, enabling features such as unlocking all costumes and enabling infinite ammo.
+AFCheat is a Windows trainer for the single-player game Amazing Frog. It provides a GUI to modify game memory, enabling features such as unlocking all costumes, unlocking all phone apps, and enabling infinite ammo.
 
 ## How it works
 - Uses Windows APIs (via Python's `ctypes`) to open the target game process and read/write its memory.
@@ -19,6 +19,7 @@ AFCheat is a Windows trainer for the single-player game Amazing Frog. It provide
 - List and select running processes
 - Validate process and locate `GameAssembly.dll` base
 - Unlock all costumes
+- Unlock all phone apps
 - Enable / restore infinite ammo
 - Restore original memory state
 

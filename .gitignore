@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller 构建产物（AFCheat.spec 保留，便于复现构建）
+build/
+dist/
+
+# 本地编辑器 / Claude 设置
+.claude/

@@ -9,6 +9,7 @@ except ImportError:
 
 from ..constants import (
     AMMO_OFFSET,
+    APP_UNLOCK_OFFSET,
     FORCE_RETURN_TRUE,
     FUNCTION_PROLOGUE_BYTES,
     GAME_MODULE,
@@ -26,8 +27,10 @@ class AmazingFrogCheat:
         self.gameassembly_base = None
         self.unlock_addr = None
         self.ammo_check_addr = None
+        self.app_unlock_addr = None
         self.original_unlock_bytes = None
         self.original_ammo_bytes = None
+        self.original_app_unlock_bytes = None
 
         # 进程相关
         self.selected_pid = None
@@ -35,6 +38,7 @@ class AmazingFrogCheat:
 
         self.costume_unlocked = False
         self.infinite_ammo_enabled = False
+        self.apps_unlocked = False
 
     def set_target_process(self, pid: int, process_name: str):
         """设置目标进程"""
@@ -74,38 +78,36 @@ class AmazingFrogCheat:
             logger.exception("获取模块基址失败")
             return False
 
+    def _locate_function(self, offset: int):
+        """按偏移读取函数入口；首字节命中序言集合即视为命中的函数入口。"""
+        test_addr = self.gameassembly_base + offset
+        try:
+            bytes_at_addr = memory.read_bytes(test_addr, 10)
+        except Exception:
+            logger.exception("读取函数地址 0x%X 失败", test_addr)
+            return None
+        if bytes_at_addr and bytes_at_addr[0] in FUNCTION_PROLOGUE_BYTES:
+            return test_addr
+        return None
+
     def find_functions(self) -> tuple[bool, bool]:
         """查找需要修改的函数地址"""
         if not self.gameassembly_base:
             if not self.get_base_address():
                 return False, False
 
-        unlock_found = False
-        ammo_found = False
+        self.unlock_addr = self._locate_function(UNLOCK_OFFSET)
+        self.ammo_check_addr = self._locate_function(AMMO_OFFSET)
+        self.app_unlock_addr = self._locate_function(APP_UNLOCK_OFFSET)
 
-        # 查找 IsCostumeItemUnlocked 函数
-        if UNLOCK_OFFSET is not None:
-            test_addr = self.gameassembly_base + UNLOCK_OFFSET
-            try:
-                bytes_at_addr = memory.read_bytes(test_addr, 10)
-                if bytes_at_addr and bytes_at_addr[0] in FUNCTION_PROLOGUE_BYTES:
-                    self.unlock_addr = test_addr
-                    unlock_found = True
-            except Exception:
-                logger.exception("读取解锁函数地址 0x%X 失败", test_addr)
+        return self.unlock_addr is not None, self.ammo_check_addr is not None
 
-        # 查找 get_infiniteAmmo 函数
-        if AMMO_OFFSET is not None:
-            test_addr = self.gameassembly_base + AMMO_OFFSET
-            try:
-                bytes_at_addr = memory.read_bytes(test_addr, 10)
-                if bytes_at_addr and bytes_at_addr[0] in FUNCTION_PROLOGUE_BYTES:
-                    self.ammo_check_addr = test_addr
-                    ammo_found = True
-            except Exception:
-                logger.exception("读取无限子弹函数地址 0x%X 失败", test_addr)
-
-        return unlock_found, ammo_found
+    def find_app_unlock_function(self) -> bool:
+        """查找手机 APP 解锁函数地址（fjAchievementObject.IsUnlocked）。"""
+        if not self.gameassembly_base and not self.get_base_address():
+            return False
+        self.app_unlock_addr = self._locate_function(APP_UNLOCK_OFFSET)
+        return self.app_unlock_addr is not None
 
     def unlock_all_costumes(self) -> bool:
         """解锁所有皮肤"""
@@ -147,9 +149,33 @@ class AmazingFrogCheat:
             logger.exception("无限子弹补丁写入失败")
             return False
 
-    def restore_original(self) -> tuple[bool, bool]:
+    def unlock_all_apps(self) -> bool:
+        """解锁所有手机 APP（强制成就判定为已达成）"""
+        if not self.app_unlock_addr:
+            return False
+
+        try:
+            # 保存原始字节
+            self.original_app_unlock_bytes = memory.read_bytes(
+                self.app_unlock_addr, len(FORCE_RETURN_TRUE)
+            )
+
+            # 应用 patch：总是返回 true
+            memory.write_bytes(self.app_unlock_addr, FORCE_RETURN_TRUE)
+            self.apps_unlocked = True
+            return True
+
+        except Exception:
+            logger.exception("解锁手机 APP 补丁写入失败")
+            return False
+
+    def restore_original(self) -> tuple[bool, bool, bool]:
         """恢复原始代码"""
-        return self.restore_costume_unlock(), self.restore_infinite_ammo()
+        return (
+            self.restore_costume_unlock(),
+            self.restore_infinite_ammo(),
+            self.restore_app_unlock(),
+        )
 
     def restore_costume_unlock(self) -> bool:
         """仅恢复“解锁全部皮肤”相关修改"""
@@ -172,5 +198,17 @@ class AmazingFrogCheat:
                 return True
             except Exception:
                 logger.exception("恢复无限子弹修改失败")
+                return False
+        return False
+
+    def restore_app_unlock(self) -> bool:
+        """仅恢复“解锁全部手机 APP”相关修改"""
+        if self.app_unlock_addr and self.original_app_unlock_bytes:
+            try:
+                memory.write_bytes(self.app_unlock_addr, self.original_app_unlock_bytes)
+                self.apps_unlocked = False
+                return True
+            except Exception:
+                logger.exception("恢复手机 APP 解锁修改失败")
                 return False
         return False

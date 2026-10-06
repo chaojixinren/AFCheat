@@ -1,6 +1,7 @@
 """主窗口：装配标题区与各功能面板。"""
 
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, PhotoImage
 
@@ -12,8 +13,16 @@ from .title_section import build_title_section
 from .process_panel import ProcessPanel
 from .cheat_panel import CheatPanel
 
-# 项目根目录（本文件位于 <root>/afcheat/ui/app.py，向上三级）
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def _resource_dir() -> str:
+    """资源目录：打包后为解包目录，否则为项目根。
+
+    源码运行时本文件位于 <root>/afcheat/ui/app.py，向上三级即项目根；
+    PyInstaller 冻结后资源被解包到 sys._MEIPASS。
+    """
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class AmazingFrogCheatGUI(tk.Tk):
@@ -30,7 +39,7 @@ class AmazingFrogCheatGUI(tk.Tk):
 
         # 窗口图标
         try:
-            self.iconbitmap(os.path.join(PROJECT_ROOT, "icon.ico"))
+            self.iconbitmap(os.path.join(_resource_dir(), "icon.ico"))
         except Exception:
             pass
 
@@ -48,7 +57,7 @@ class AmazingFrogCheatGUI(tk.Tk):
     def _load_assets(self):
         """加载 UI 资源（封面图）；图片过大时自动缩小。"""
         self.hero_image = None
-        img_path = os.path.join(PROJECT_ROOT, "amazingfrog.png")
+        img_path = os.path.join(_resource_dir(), "amazingfrog.png")
         if os.path.exists(img_path):
             try:
                 img = PhotoImage(file=img_path)
