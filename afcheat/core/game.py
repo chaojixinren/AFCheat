@@ -9,12 +9,15 @@ except ImportError:
 
 from ..constants import (
     AMMO_OFFSET,
+    AMMO_ORIGINAL_BYTES,
+    APP_ORIGINAL_BYTES,
     APP_UNLOCK_OFFSET,
     FORCE_RETURN_TRUE,
     FUNCTION_PROLOGUE_BYTES,
     GAME_MODULE,
     MONEY_PATCHES,
     UNLOCK_OFFSET,
+    UNLOCK_ORIGINAL_BYTES,
 )
 from . import memory
 
@@ -118,22 +121,47 @@ class AmazingFrogCheat:
         self.app_unlock_addr = self._locate_function(APP_UNLOCK_OFFSET)
         return self.app_unlock_addr is not None
 
+    def _apply_force_true(self, addr: int, expected: bytes):
+        """应用 FORCE_RETURN_TRUE，返回可用于恢复的原始字节；失败返回 None。
+
+        目标已是补丁态（上次未恢复）时，返回 expected 作为兜底原字节。
+        """
+        current = memory.read_bytes(addr, len(FORCE_RETURN_TRUE))
+        if not current or len(current) < len(FORCE_RETURN_TRUE):
+            return None
+        if current[:len(FORCE_RETURN_TRUE)] == FORCE_RETURN_TRUE:
+            return expected
+        if current[:len(expected)] != expected:
+            logger.warning("目标 0x%X 字节与预期原字节不符（游戏可能已更新）：%s",
+                           addr, current.hex(" "))
+            return None
+        memory.write_bytes(addr, FORCE_RETURN_TRUE)
+        return current
+
+    def _restore_force_true(self, addr: int, original, expected: bytes) -> bool:
+        """还原 FORCE_RETURN_TRUE 补丁；original 缺失且当前是补丁态时用 expected 兜底。"""
+        if not addr:
+            return False
+        data = original
+        if data is None:
+            current = memory.read_bytes(addr, len(FORCE_RETURN_TRUE))
+            if not current or current[:len(FORCE_RETURN_TRUE)] != FORCE_RETURN_TRUE:
+                return False
+            data = expected
+        memory.write_bytes(addr, data)
+        return True
+
     def unlock_all_costumes(self) -> bool:
         """解锁所有皮肤"""
         if not self.unlock_addr:
             return False
-
         try:
-            # 保存原始字节
-            self.original_unlock_bytes = memory.read_bytes(
-                self.unlock_addr, len(FORCE_RETURN_TRUE)
-            )
-
-            # 应用 patch：总是返回 true
-            memory.write_bytes(self.unlock_addr, FORCE_RETURN_TRUE)
+            original = self._apply_force_true(self.unlock_addr, UNLOCK_ORIGINAL_BYTES)
+            if original is None:
+                return False
+            self.original_unlock_bytes = original
             self.costume_unlocked = True
             return True
-
         except Exception:
             logger.exception("解锁皮肤补丁写入失败")
             return False
@@ -142,18 +170,13 @@ class AmazingFrogCheat:
         """启用无限子弹"""
         if not self.ammo_check_addr:
             return False
-
         try:
-            # 保存原始字节
-            self.original_ammo_bytes = memory.read_bytes(
-                self.ammo_check_addr, len(FORCE_RETURN_TRUE)
-            )
-
-            # 应用 patch：总是返回 true
-            memory.write_bytes(self.ammo_check_addr, FORCE_RETURN_TRUE)
+            original = self._apply_force_true(self.ammo_check_addr, AMMO_ORIGINAL_BYTES)
+            if original is None:
+                return False
+            self.original_ammo_bytes = original
             self.infinite_ammo_enabled = True
             return True
-
         except Exception:
             logger.exception("无限子弹补丁写入失败")
             return False
@@ -162,18 +185,13 @@ class AmazingFrogCheat:
         """解锁所有手机 APP（强制成就判定为已达成）"""
         if not self.app_unlock_addr:
             return False
-
         try:
-            # 保存原始字节
-            self.original_app_unlock_bytes = memory.read_bytes(
-                self.app_unlock_addr, len(FORCE_RETURN_TRUE)
-            )
-
-            # 应用 patch：总是返回 true
-            memory.write_bytes(self.app_unlock_addr, FORCE_RETURN_TRUE)
+            original = self._apply_force_true(self.app_unlock_addr, APP_ORIGINAL_BYTES)
+            if original is None:
+                return False
+            self.original_app_unlock_bytes = original
             self.apps_unlocked = True
             return True
-
         except Exception:
             logger.exception("解锁手机 APP 补丁写入失败")
             return False
@@ -231,50 +249,67 @@ class AmazingFrogCheat:
 
     def restore_costume_unlock(self) -> bool:
         """仅恢复“解锁全部皮肤”相关修改"""
-        if self.unlock_addr and self.original_unlock_bytes:
-            try:
-                memory.write_bytes(self.unlock_addr, self.original_unlock_bytes)
+        if not self.unlock_addr:
+            return False
+        try:
+            ok = self._restore_force_true(self.unlock_addr, self.original_unlock_bytes,
+                                          UNLOCK_ORIGINAL_BYTES)
+            if ok:
                 self.costume_unlocked = False
-                return True
-            except Exception:
-                logger.exception("恢复皮肤解锁修改失败")
-                return False
-        return False
+            return ok
+        except Exception:
+            logger.exception("恢复皮肤解锁修改失败")
+            return False
 
     def restore_infinite_ammo(self) -> bool:
         """仅恢复“无限子弹”相关修改"""
-        if self.ammo_check_addr and self.original_ammo_bytes:
-            try:
-                memory.write_bytes(self.ammo_check_addr, self.original_ammo_bytes)
+        if not self.ammo_check_addr:
+            return False
+        try:
+            ok = self._restore_force_true(self.ammo_check_addr, self.original_ammo_bytes,
+                                          AMMO_ORIGINAL_BYTES)
+            if ok:
                 self.infinite_ammo_enabled = False
-                return True
-            except Exception:
-                logger.exception("恢复无限子弹修改失败")
-                return False
-        return False
+            return ok
+        except Exception:
+            logger.exception("恢复无限子弹修改失败")
+            return False
 
     def restore_app_unlock(self) -> bool:
         """仅恢复“解锁全部手机 APP”相关修改"""
-        if self.app_unlock_addr and self.original_app_unlock_bytes:
-            try:
-                memory.write_bytes(self.app_unlock_addr, self.original_app_unlock_bytes)
+        if not self.app_unlock_addr:
+            return False
+        try:
+            ok = self._restore_force_true(self.app_unlock_addr, self.original_app_unlock_bytes,
+                                          APP_ORIGINAL_BYTES)
+            if ok:
                 self.apps_unlocked = False
-                return True
-            except Exception:
-                logger.exception("恢复手机 APP 解锁修改失败")
-                return False
-        return False
+            return ok
+        except Exception:
+            logger.exception("恢复手机 APP 解锁修改失败")
+            return False
 
     def restore_infinite_money(self) -> bool:
         """仅恢复“无限金钱”相关修改"""
-        if self.original_money_patches:
-            try:
-                for addr, original in self.original_money_patches:
-                    memory.write_bytes(addr, original)
-                self.original_money_patches = None
-                self.infinite_money_enabled = False
-                return True
-            except Exception:
-                logger.exception("恢复无限金钱修改失败")
+        targets = self.original_money_patches
+        if not targets:
+            if not self.gameassembly_base and not self.get_base_address():
                 return False
-        return False
+            # 没有保存的原字节时，对仍处于补丁态的目标用已知原字节兜底还原
+            targets = []
+            for offset, expected, patch in MONEY_PATCHES:
+                addr = self.gameassembly_base + offset
+                current = memory.read_bytes(addr, len(patch))
+                if current and current[:len(patch)] == patch:
+                    targets.append((addr, expected))
+            if not targets:
+                return False
+        try:
+            for addr, original in targets:
+                memory.write_bytes(addr, original)
+            self.original_money_patches = None
+            self.infinite_money_enabled = False
+            return True
+        except Exception:
+            logger.exception("恢复无限金钱修改失败")
+            return False

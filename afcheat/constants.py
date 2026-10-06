@@ -23,6 +23,11 @@ MONEY_VALUE = 999_999_999
 
 # 强制函数返回 true：mov rax, 1; ret
 FORCE_RETURN_TRUE = bytes([0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, 0xC3])
+# 各「强制返回 true」功能原函数首 8 字节（与 FORCE_RETURN_TRUE 等长）。
+# 目标已是补丁态（上次未恢复）时，用它兜底还原。
+UNLOCK_ORIGINAL_BYTES = bytes([0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83])
+AMMO_ORIGINAL_BYTES   = bytes([0x48, 0x83, 0xEC, 0x28, 0x80, 0x3D, 0x29, 0x79])
+APP_ORIGINAL_BYTES    = bytes([0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74])
 # 强制函数返回指定 int：mov eax, <MONEY_VALUE>; ret
 FORCE_RETURN_MONEY = bytes([0xB8]) + MONEY_VALUE.to_bytes(4, "little") + bytes([0xC3])
 # 把 edx 置为 MONEY_VALUE（替换 `mov edx,[rax+0xa8]` 字段读取）：mov edx,<v>; nop
@@ -54,7 +59,7 @@ GAME_PROCESS_NAMES = (
 # ---------------------------------------------------------------------------
 # 窗口
 # ---------------------------------------------------------------------------
-WINDOW_TITLE = "AFCheat v1.0.3 -by 超級の新人"
+WINDOW_TITLE = "AFCheat v1.0.4 -by 超級の新人"
 WINDOW_SIZE = "1000x800"
 WINDOW_MINSIZE = (960, 720)
 
